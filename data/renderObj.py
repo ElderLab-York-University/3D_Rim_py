@@ -8,7 +8,7 @@ import cv2
 default_pose = np.array([
     [1.0, 0.0, 0.0, 0.0],
     [0.0, 1.0, 0.0, 0.0],
-    [0.0, 0.0, 1.0, 2.0],
+    [0.0, 0.0, 1.0, 1.0],
     [0.0, 0.0, 0.0, 1.0],
 ])
 def normalize_mesh(mesh):
@@ -35,7 +35,8 @@ def create_point_cloud_mesh(points, colors=None, point_size=0.005):
     return point_cloud
 def find_occluding_contours(color, depth, depth_threshold=0.01, canny_low_threshold=100, canny_high_threshold=200):
     # Normalize depth image
-    depth_normalized = (depth - depth.min()) / (depth.max() - depth.min())
+    depth_normalized = np.copy(depth)
+    depth_normalized[depth_normalized!=0] = 1
     depth_normalized = (depth_normalized * 255).astype(np.uint8)
 
     # Apply Canny edge detection on the depth image
