@@ -11,14 +11,16 @@ default_pose = np.array([
     [0.0, 0.0, 1.0, 2.0],
     [0.0, 0.0, 0.0, 1.0],
 ])
-def normalize_mesh(mesh, target_size=1.0):
-    bbox = mesh.bounds  # 获取模型的边界框
-    size = bbox[1] - bbox[0]  # 计算模型的尺寸
-    max_size = size.max()  # 获取最大尺寸
+def normalize_mesh(mesh):
+    # Translate the mesh to the origin
+    mesh_center = mesh.centroid
+    mesh.apply_translation(-mesh_center)
 
-    # 缩放模型以使最大尺寸等于目标尺寸
-    scale_factor = target_size / max_size
-    mesh.apply_scale(scale_factor)
+    # Scale the mesh to have a uniform size (e.g., the longest dimension equals 1)
+    mesh_bounds = mesh.bounds
+    mesh_size = mesh_bounds[1] - mesh_bounds[0]
+    max_dimension = mesh_size.max()
+    mesh.apply_scale(1 / max_dimension)
 
     return mesh
 
@@ -55,7 +57,6 @@ def find_occluding_contours(color, depth, depth_threshold=0.01, canny_low_thresh
     color_with_contours[occluding_contours > 0] = [0, 255, 0]
 
     return occluding_contours, color_with_contours
-import numpy as np
 
 def generate_camera_pose(distance, azimuth, elevation):
     # Convert angles from degrees to radians
@@ -129,5 +130,5 @@ def render(objpth,yfov=np.pi/3.0,aspectRatio=1.0,camera_pose=default_pose):
     plt.show()
 
 if __name__ == "__main__":
-    plyPath = './testData/cow.obj'
-    render(plyPath,camera_pose=generate_camera_pose(10.0,0,-90))
+    plyPath = './testData/trumpet.obj'
+    render(plyPath)
