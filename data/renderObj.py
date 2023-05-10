@@ -1,5 +1,6 @@
 import math
 import glm
+import imageio
 import numpy
 import pyrender
 import trimesh
@@ -124,23 +125,15 @@ def render(objpth,yfov=np.pi/3.0,aspectRatio=1.0,camera_pose=None,r_axis=[0,1,0]
 
     scene.add(light, pose=camera_pose)
 
-    r = pyrender.OffscreenRenderer(viewport_width=1080, viewport_height=1080)
+    r = pyrender.OffscreenRenderer(viewport_width=512, viewport_height=512)
     color, depth = r.render(scene)
+   # occluding_contours, color_with_contours = find_occluding_contours(color, depth)
 
-    occluding_contours, color_with_contours = find_occluding_contours(color, depth)
-
-    plt.figure(figsize=(24, 8))
-    plt.subplot(1,3,1)
-    plt.axis('off')
-    plt.imshow(color)
-    plt.subplot(1,3,2)
-    plt.axis('off')
-    plt.imshow(depth, cmap=plt.cm.gray_r)
-    plt.subplot(1,3,3)
-    plt.axis('off')
-    plt.imshow(occluding_contours,cmap=plt.cm.gray_r)
-    plt.show()
+    return depth
 
 if __name__ == "__main__":
     plyPath = './testData/cow.obj'
-    render(plyPath,r_angle=90)
+    depth = render(plyPath,r_angle=90)
+    imageio.imwrite("./testData/cow2.png",depth)
+
+
