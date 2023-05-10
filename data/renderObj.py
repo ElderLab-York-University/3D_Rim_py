@@ -1,3 +1,6 @@
+import math
+import glm
+import numpy
 import pyrender
 import trimesh
 import numpy as np
@@ -5,12 +8,7 @@ import matplotlib.pyplot as plt
 import cv2
 
 
-default_pose = np.array([
-    [1.0, 0.0, 0.0, 0.0],
-    [0.0, 1.0, 0.0, 0.0],
-    [0.0, 0.0, 1.0, 1.0],
-    [0.0, 0.0, 0.0, 1.0],
-])
+
 def normalize_mesh(mesh):
     # Translate the mesh to the origin
     mesh_center = mesh.centroid
@@ -22,8 +20,21 @@ def normalize_mesh(mesh):
     max_dimension = mesh_size.max()
     mesh.apply_scale(1 / max_dimension)
 
-    return mesh
 
+    return mesh
+def rotate_trimesh(mesh, axis, angle):
+
+    # Convert the angle to radians
+    angle_rad = np.radians(angle)
+
+    # Create the rotation matrix
+    rotation_matrix = trimesh.transformations.rotation_matrix(angle_rad, axis)
+
+    # Apply the rotation to the mesh
+    rotated_mesh = mesh.copy()
+    rotated_mesh.apply_transform(rotation_matrix)
+
+    return rotated_mesh
 def create_point_cloud_mesh(points, colors=None, point_size=0.005):
     if colors is None:
         colors = np.full(points.shape, [0.5, 0.5, 0.5], dtype=np.float32)
@@ -38,7 +49,6 @@ def find_occluding_contours(color, depth, depth_threshold=0.01, canny_low_thresh
     depth_normalized = np.copy(depth)
     depth_normalized[depth_normalized!=0] = 1
     depth_normalized = (depth_normalized * 255).astype(np.uint8)
-
     # Apply Canny edge detection on the depth image
     edges = cv2.Canny(depth_normalized, canny_low_threshold, canny_high_threshold)
 
@@ -58,51 +68,41 @@ def find_occluding_contours(color, depth, depth_threshold=0.01, canny_low_thresh
     color_with_contours[occluding_contours > 0] = [0, 255, 0]
 
     return occluding_contours, color_with_contours
+def normalize(vector):
+    return vector / np.linalg.norm(vector)
 
-def generate_camera_pose(distance, azimuth, elevation):
-    # Convert angles from degrees to radians
-    azimuth_rad = np.radians(azimuth)
-    elevation_rad = np.radians(elevation)
+def camera_matrix(camera_position, target_position, up_direction):
+    forward = normalize(camera_position - target_position)
+    temp_right = np.cross(up_direction, forward)
+    right = normalize(temp_right)
+    up = np.cross(forward, right)
 
-    # Calculate the camera position in Cartesian coordinates
-    x = distance * np.cos(elevation_rad) * np.sin(azimuth_rad)
-    y = distance * np.sin(elevation_rad)
-    z = distance * np.cos(elevation_rad) * np.cos(azimuth_rad)
+    rotation_matrix = np.array([right, up, forward])
+    translation_vector = -np.dot(rotation_matrix, camera_position)
 
-    camera_position = np.array([x, y, z])
+    view_matrix = np.eye(4)
+    view_matrix[:3, :3] = rotation_matrix.T
+    view_matrix[:3, 3] = translation_vector
 
-    # Calculate the camera orientation using the look-at algorithm
-    target = np.array([0, 0, 0])  # Camera is always looking at (0, 0, 0)
-    up = np.array([0, 1, 0]) if np.abs(elevation) != 90 else np.array([0, 0, 1])
-
-    forward = target - camera_position
-    forward /= np.linalg.norm(forward)
-    left = np.cross(up, forward)
-    left /= np.linalg.norm(left)
-    up = np.cross(forward, left)
-
-    camera_pose = np.eye(4)
-    camera_pose[:3, :3] = np.vstack((left, up, forward)).T
-    camera_pose[:3, 3] = camera_position
-    print(camera_pose)
-    return camera_pose
+    return view_matrix
 
 
-def render(objpth,yfov=np.pi/3.0,aspectRatio=1.0,camera_pose=default_pose):
+def render(objpth,yfov=np.pi/3.0,aspectRatio=1.0,camera_pose=None,r_axis=[0,1,0],r_angle=0):
     loadedMesh = trimesh.load(objpth)
     scaledMesh = normalize_mesh(loadedMesh)
-    if isinstance(scaledMesh,trimesh.points.PointCloud):
-        points = scaledMesh.vertices
-        colors = scaledMesh.colors
+    rotatedMesh = rotate_trimesh(scaledMesh,r_axis,r_angle)
+    if isinstance(rotatedMesh,trimesh.points.PointCloud):
+        points = rotatedMesh.vertices
+        colors = rotatedMesh.colors
         point_cloud_mesh = create_point_cloud_mesh(points, colors)
         scene = pyrender.Scene()
         scene.add_node(point_cloud_mesh)
     else:
-        if isinstance(scaledMesh, trimesh.Trimesh):
+        if isinstance(rotatedMesh, trimesh.Trimesh):
             trimeshScene = trimesh.Scene()
-            trimeshScene.add_geometry(scaledMesh)
+            trimeshScene.add_geometry(rotatedMesh)
         else:
-            trimeshScene = scaledMesh
+            trimeshScene = rotatedMesh
         scene = pyrender.Scene.from_trimesh_scene(trimeshScene)
 
 
@@ -110,7 +110,18 @@ def render(objpth,yfov=np.pi/3.0,aspectRatio=1.0,camera_pose=default_pose):
 
 
     light = pyrender.SpotLight(color=np.ones(3), intensity=3.0,innerConeAngle = np.pi / 16.0,outerConeAngle = np.pi / 6.0)
-    scene.add(camera,pose=camera_pose)
+    if camera_pose is not None:
+        scene.add(camera, pose=camera_pose)
+    else:
+        camera_distance = 0.6 / math.tan(yfov / 2)
+        default_pose = np.array([
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, camera_distance],
+            [0.0, 0.0, 0.0, 1.0],
+        ])
+        scene.add(camera, pose=default_pose)
+
     scene.add(light, pose=camera_pose)
 
     r = pyrender.OffscreenRenderer(viewport_width=1080, viewport_height=1080)
@@ -131,5 +142,5 @@ def render(objpth,yfov=np.pi/3.0,aspectRatio=1.0,camera_pose=default_pose):
     plt.show()
 
 if __name__ == "__main__":
-    plyPath = './testData/trumpet.obj'
-    render(plyPath)
+    plyPath = './testData/cow.obj'
+    render(plyPath,r_angle=90)
