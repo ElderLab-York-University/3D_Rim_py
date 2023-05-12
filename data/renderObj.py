@@ -114,7 +114,7 @@ def render(objpth,yfov=np.pi/3.0,aspectRatio=1.0,camera_pose=None,r_axis=[0,1,0]
     if camera_pose is not None:
         scene.add(camera, pose=camera_pose)
     else:
-        camera_distance = 0.6 / math.tan(yfov / 2)
+        camera_distance = 0.6 / math.tan(yfov / 2)+0.5
         default_pose = np.array([
             [1.0, 0.0, 0.0, 0.0],
             [0.0, 1.0, 0.0, 0.0],
