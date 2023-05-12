@@ -73,17 +73,20 @@ print("finsih reading")
 k = 20000
 all_image_pairs = list(itertools.combinations(range(len(images)), 2))
 selected_image_pairs = random.sample(all_image_pairs, k)
-print("start")
+print("start"+str(len(selected_image_pairs)))
 
 for pair in tqdm(selected_image_pairs):
     idx1,idx2 = pair
     process_image_pair(images[idx1],images[idx2])
 
-
-plt.hexbin(contours, correlations, gridsize=100, cmap='viridis',xscale="log")
+print(str(len(contours)))
+print(str(len(correlations)))
+x = np.asarray(contours)
+y = np.asarray(correlations)
+plt.hist2d(x, y, bins=100, cmap='Blues')
 plt.colorbar()
 plt.xlabel('contours Hu moment values')
 plt.ylabel('depthImage pearson correlation coefficient')
 plt.title('Scatter Plot of contours and depthImage correlation')
 plt.show()
-plt.savefig("./result/r2.png", dpi=200)
+plt.savefig("./result/r3.png", dpi=200)

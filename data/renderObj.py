@@ -125,7 +125,7 @@ def render(objpth,yfov=np.pi/3.0,aspectRatio=1.0,camera_pose=None,r_axis=[0,1,0]
 
     scene.add(light, pose=camera_pose)
 
-    r = pyrender.OffscreenRenderer(viewport_width=512, viewport_height=512)
+    r = pyrender.OffscreenRenderer(viewport_width=1024, viewport_height=1024)
     color, depth = r.render(scene)
    # occluding_contours, color_with_contours = find_occluding_contours(color, depth)
 
