@@ -1,5 +1,4 @@
 import math
-import glm
 import imageio
 import numpy
 import pyrender

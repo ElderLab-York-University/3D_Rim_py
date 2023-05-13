@@ -28,10 +28,11 @@ def convert(objPth,depthOutDir):
 
 
 def touint8(array):
-    normalized_array = (array - array.min()) / (array.max() - array.min())
-    uint8_array = (normalized_array * 255).astype(np.uint8)
-
-
+    try:
+        normalized_array = (array - array.min()) / (array.max() - array.min())
+        uint8_array = (normalized_array * 255).astype(np.uint8)
+    except:
+        pass
     return uint8_array
 
 objPth = "../ShapeNetCore.v2"
