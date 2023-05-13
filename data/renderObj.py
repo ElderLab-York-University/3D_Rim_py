@@ -88,7 +88,7 @@ def camera_matrix(camera_position, target_position, up_direction):
     return view_matrix
 
 
-def render(objpth,yfov=np.pi/3.0,aspectRatio=1.0,camera_pose=None,r_axis=[0,1,0],r_angle=0):
+def render(r,objpth,yfov=np.pi/3.0,aspectRatio=1.0,camera_pose=None,r_axis=[0,1,0],r_angle=0):
     loadedMesh = trimesh.load(objpth)
     scaledMesh = normalize_mesh(loadedMesh)
     rotatedMesh = rotate_trimesh(scaledMesh,r_axis,r_angle)
@@ -124,8 +124,6 @@ def render(objpth,yfov=np.pi/3.0,aspectRatio=1.0,camera_pose=None,r_axis=[0,1,0]
         scene.add(camera, pose=default_pose)
 
     scene.add(light, pose=camera_pose)
-
-    r = pyrender.OffscreenRenderer(viewport_width=1024, viewport_height=1024)
     color, depth = r.render(scene)
    # occluding_contours, color_with_contours = find_occluding_contours(color, depth)
 

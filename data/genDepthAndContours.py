@@ -6,6 +6,9 @@ from tqdm import tqdm
 
 from data import renderObj
 import numpy as np
+import pyrender
+
+r = pyrender.OffscreenRenderer(viewport_width=1024, viewport_height=1024)
 
 
 def find_obj_files(path):
@@ -23,7 +26,7 @@ def convert(objPth,depthOutDir):
         if os.path.exists(depthOutFile):
             continue
         else:
-            depthImg = renderObj.render(objPth,r_angle=i)
+            depthImg = renderObj.render(r,objPth,r_angle=i)
             imageio.imwrite(depthOutFile, touint8(depthImg))
 
 
