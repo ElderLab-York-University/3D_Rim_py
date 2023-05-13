@@ -1,4 +1,6 @@
 import math
+import time
+
 import imageio
 import numpy
 import pyrender
@@ -87,9 +89,11 @@ def camera_matrix(camera_position, target_position, up_direction):
     return view_matrix
 
 
-def render(r,objpth,yfov=np.pi/3.0,aspectRatio=1.0,camera_pose=None,r_axis=[0,1,0],r_angle=0):
+def loadAndScale(objpth):
     loadedMesh = trimesh.load(objpth)
     scaledMesh = normalize_mesh(loadedMesh)
+    return scaledMesh
+def render(r,scaledMesh,yfov=np.pi/3.0,aspectRatio=1.0,camera_pose=None,r_axis=[0,1,0],r_angle=0):
     rotatedMesh = rotate_trimesh(scaledMesh,r_axis,r_angle)
     if isinstance(rotatedMesh,trimesh.points.PointCloud):
         points = rotatedMesh.vertices
@@ -123,14 +127,21 @@ def render(r,objpth,yfov=np.pi/3.0,aspectRatio=1.0,camera_pose=None,r_axis=[0,1,
         scene.add(camera, pose=default_pose)
 
     scene.add(light, pose=camera_pose)
+
     color, depth = r.render(scene)
+
+
    # occluding_contours, color_with_contours = find_occluding_contours(color, depth)
 
     return depth
 
 if __name__ == "__main__":
+    r = pyrender.OffscreenRenderer(viewport_width=1024, viewport_height=1024)
     plyPath = './testData/cow.obj'
-    depth = render(plyPath,r_angle=90)
+
+    depth = render(r,plyPath,r_angle=90)
+    # 计算并打印渲染时间
+
     imageio.imwrite("./testData/cow2.png",depth)
 
 
