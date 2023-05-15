@@ -27,7 +27,6 @@ def convert(objPth,depthOutDir):
             continue
         else:
             depthImg = renderObj.render(r, mesh, r_angle=i)
-
             imageio.imwrite(depthOutFile, touint8(depthImg))
 def touint8(array):
     try:
