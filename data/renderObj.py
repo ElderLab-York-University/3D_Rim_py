@@ -8,7 +8,8 @@ import trimesh
 import numpy as np
 import matplotlib.pyplot as plt
 import cv2
-
+from PIL import Image
+from pyrender.shader_program import ShaderProgramCache
 
 
 def normalize_mesh(mesh):
@@ -135,13 +136,54 @@ def render(r,scaledMesh,yfov=np.pi/3.0,aspectRatio=1.0,camera_pose=None,r_axis=[
 
     return depth
 
+
+def renderNomral(r,scaledMesh,yfov=np.pi/3.0,aspectRatio=1.0,camera_pose=None,r_axis=[0,1,0],r_angle=0):
+    rotatedMesh = rotate_trimesh(scaledMesh,r_axis,r_angle)
+    if isinstance(rotatedMesh,trimesh.points.PointCloud):
+        points = rotatedMesh.vertices
+        colors = rotatedMesh.colors
+        point_cloud_mesh = create_point_cloud_mesh(points, colors)
+        scene = pyrender.Scene()
+        scene.add_node(point_cloud_mesh)
+    else:
+        if isinstance(rotatedMesh, trimesh.Trimesh):
+            trimeshScene = trimesh.Scene()
+            trimeshScene.add_geometry(rotatedMesh)
+        else:
+            trimeshScene = rotatedMesh
+        scene = pyrender.Scene.from_trimesh_scene(trimeshScene)
+
+
+    camera = pyrender.PerspectiveCamera(yfov=yfov, aspectRatio=aspectRatio)
+
+
+    light = pyrender.SpotLight(color=np.ones(3), intensity=3.0,innerConeAngle = np.pi / 16.0,outerConeAngle = np.pi / 6.0)
+    if camera_pose is not None:
+        scene.add(camera, pose=camera_pose)
+    else:
+        camera_distance = 0.6 / math.tan(yfov / 2)+0.5
+        default_pose = np.array([
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, camera_distance],
+            [0.0, 0.0, 0.0, 1.0],
+        ])
+        scene.add(camera, pose=default_pose)
+
+    scene.add(light, pose=camera_pose)
+
+    normals, depth = r.render(scene)
+    # occluding_contours, color_with_contours = find_occluding_contours(color, depth)
+
+    return normals,depth
 if __name__ == "__main__":
     r = pyrender.OffscreenRenderer(viewport_width=1024, viewport_height=1024)
     plyPath = './testData/cow.obj'
+    r._renderer._program_cache = ShaderProgramCache(shader_dir="shaders")
 
-    depth = render(r,plyPath,r_angle=90)
+    normals,depth = renderNomral(r,loadAndScale(plyPath),r_angle=90)
     # 计算并打印渲染时间
 
-    imageio.imwrite("./testData/cow2.png",depth)
+    imageio.imwrite("./testData/cow2normal.png",normals)
 
 
