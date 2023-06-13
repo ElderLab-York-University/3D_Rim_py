@@ -14,17 +14,21 @@ from pyrender.shader_program import ShaderProgramCache
 
 def normalize_mesh(mesh):
     # Translate the mesh to the origin
-    mesh_center = mesh.centroid
-    mesh.apply_translation(-mesh_center)
+    mesh_AABB_center = mesh.centroid
+
+    mesh_geo_center = compute_mesh_center(mesh)
+    mesh.apply_translation(-mesh_geo_center)
 
     # Scale the mesh to have a uniform size (e.g., the longest dimension equals 1)
     mesh_bounds = mesh.bounds
     mesh_size = mesh_bounds[1] - mesh_bounds[0]
     max_dimension = mesh_size.max()
     mesh.apply_scale(1 / max_dimension)
-
-
     return mesh
+
+def compute_mesh_center(mesh):
+    pass
+
 def rotate_trimesh(mesh, axis, angle):
 
     # Convert the angle to radians
