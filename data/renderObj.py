@@ -1,9 +1,11 @@
 import math
 import time
+import random
 
 import imageio
 import numpy
 import pyrender
+import scipy.spatial
 import trimesh
 import numpy as np
 import matplotlib.pyplot as plt
@@ -15,19 +17,31 @@ from pyrender.shader_program import ShaderProgramCache
 def normalize_mesh(mesh):
     # Translate the mesh to the origin
     mesh_AABB_center = mesh.centroid
-
     mesh_geo_center = compute_mesh_center(mesh)
     mesh.apply_translation(-mesh_geo_center)
-
     # Scale the mesh to have a uniform size (e.g., the longest dimension equals 1)
     mesh_bounds = mesh.bounds
-    mesh_size = mesh_bounds[1] - mesh_bounds[0]
-    max_dimension = mesh_size.max()
-    mesh.apply_scale(1 / max_dimension)
+    mesh_max_1 = mesh_bounds[1] - mesh_geo_center
+    mesh_max_2 = mesh_bounds[0] - mesh_geo_center
+    mesh_max_1 = abs(mesh_max_1)
+    mesh_max_2 = abs(mesh_max_2)
+
+    mesh_max_1 = mesh_max_1.max()
+    mesh_max_2 = mesh_max_2.max()
+    max_dimension = max(mesh_max_1,mesh_max_2)
+    mesh.apply_scale(0.5 / max_dimension)
     return mesh
 
 def compute_mesh_center(mesh):
-    pass
+    vex3d = np.asarray(mesh.vertices)
+    vex2d = vex3d[:,0:2]
+    K = scipy.spatial.ConvexHull(vex2d)
+    center = np.zeros(3)
+    points = vex3d[K.vertices]
+    center[0] = np.mean(points[:,0])
+    center[1] = np.mean(points[:,1])
+    center[2] = np.mean(vex3d[:,2])
+    return center
 
 def rotate_trimesh(mesh, axis, angle):
 
@@ -95,25 +109,13 @@ def camera_matrix(camera_position, target_position, up_direction):
 
 
 def loadAndScale(objpth):
-    loadedMesh = trimesh.load(objpth)
+    loadedMesh = trimesh.load(objpth,force='mesh')
     scaledMesh = normalize_mesh(loadedMesh)
     return scaledMesh
 def render(r,scaledMesh,yfov=np.pi/3.0,aspectRatio=1.0,camera_pose=None,r_axis=[0,1,0],r_angle=0):
     rotatedMesh = rotate_trimesh(scaledMesh,r_axis,r_angle)
-    if isinstance(rotatedMesh,trimesh.points.PointCloud):
-        points = rotatedMesh.vertices
-        colors = rotatedMesh.colors
-        point_cloud_mesh = create_point_cloud_mesh(points, colors)
-        scene = pyrender.Scene()
-        scene.add_node(point_cloud_mesh)
-    else:
-        if isinstance(rotatedMesh, trimesh.Trimesh):
-            trimeshScene = trimesh.Scene()
-            trimeshScene.add_geometry(rotatedMesh)
-        else:
-            trimeshScene = rotatedMesh
-        scene = pyrender.Scene.from_trimesh_scene(trimeshScene)
-
+    scene = trimesh.Scene()
+    scene.add_geometry(rotatedMesh)
 
     camera = pyrender.PerspectiveCamera(yfov=yfov, aspectRatio=aspectRatio)
 
@@ -141,8 +143,11 @@ def render(r,scaledMesh,yfov=np.pi/3.0,aspectRatio=1.0,camera_pose=None,r_axis=[
     return depth
 
 
-def renderNomral(r,scaledMesh,yfov=np.pi/3.0,aspectRatio=1.0,camera_pose=None,r_axis=[0,1,0],r_angle=0):
-    rotatedMesh = rotate_trimesh(scaledMesh,r_axis,r_angle)
+def renderNomral(r,scaledMesh,yfov=np.pi/24.0,aspectRatio=1.0,camera_pose=None):
+    rotate_angle = np.random.rand(3)*360
+    rotatedMesh = rotate_trimesh(scaledMesh,[0,1,0],rotate_angle[0])
+    rotatedMesh = rotate_trimesh(rotatedMesh,[1,0,0],rotate_angle[1])
+    rotatedMesh = rotate_trimesh(rotatedMesh,[0,0,1],rotate_angle[2])
     if isinstance(rotatedMesh,trimesh.points.PointCloud):
         points = rotatedMesh.vertices
         colors = rotatedMesh.colors
@@ -179,15 +184,14 @@ def renderNomral(r,scaledMesh,yfov=np.pi/3.0,aspectRatio=1.0,camera_pose=None,r_
     normals, depth = r.render(scene)
     # occluding_contours, color_with_contours = find_occluding_contours(color, depth)
 
-    return normals,depth
+    return normals,depth,rotate_angle
 if __name__ == "__main__":
     r = pyrender.OffscreenRenderer(viewport_width=1024, viewport_height=1024)
     plyPath = './testData/cow.obj'
     r._renderer._program_cache = ShaderProgramCache(shader_dir="shaders")
 
-    normals,depth = renderNomral(r,loadAndScale(plyPath),r_angle=90)
-    # 计算并打印渲染时间
-
-    imageio.imwrite("./testData/cow2normal.png",normals)
+    normals,depth,rotate_angle = renderNomral(r,loadAndScale(plyPath))
+    np.savez('depth.npz',depth=depth,rotate_angle=rotate_angle)
+    plt.imsave('depth_image.png', depth, cmap='gray')
 
 
