@@ -68,6 +68,8 @@ def get_depths(depth_image, points,A,B):
     arcLen = []
     for point in points:
         x, y = point
+        if x>=depth_image.shape[0] or y>=depth_image.shape[1] or x<0 or y<0:
+            return np.array(depths).reshape(-1),np.array(arcLen).reshape(-1)
         depth = depth_image[y, x]
         if depth > 0 :
             depths.append(depth)
@@ -75,12 +77,18 @@ def get_depths(depth_image, points,A,B):
             arcLen.append(distance)
     return np.array(depths).reshape(-1),np.array(arcLen).reshape(-1)
 
-def get_line_pixels_and_projections(img, A, B,factor):
-    points = bresenham_float(A, B)
-    end = len(points)*factor
-    points = points[0:int(end)]
-    y,x = get_depths(img,points,A,B)
-    return x,y
+def get_line_pixels_and_projections(img, curr, bisector_normalized):
+    posP = curr+bisector_normalized
+    negP = curr-bisector_normalized
+    points1 = bresenham_float(curr,posP)
+    points2 = bresenham_float(curr,negP)
+
+    y,x = get_depths(img,points1,curr,posP)
+    y1,x1 = get_depths(img,points2,curr,negP)
+    if len(y) > len(y1):
+        return x1,y1
+    else:
+        return x,y
 
 def get_curvature(x, y):
     if(len(x)<3):
@@ -92,9 +100,9 @@ def get_curvature(x, y):
     curvature = abs(2*a) / (1 + (2*a*x_mean + b)**2)**(3/2)
     return curvature
 
-def get_line_pixels_and_curvature(img, A, B,factor):
+def get_line_pixels_and_curvature(img, curr, bisector_normalized):
 
-    x,y = get_line_pixels_and_projections(img, A, B,factor)
+    x,y = get_line_pixels_and_projections(img, curr, bisector_normalized)
     if(len(x)==0):
         return 0
     min_val = np.min(x)
@@ -105,10 +113,42 @@ def get_line_pixels_and_curvature(img, A, B,factor):
 '''
 test code
 '''
-def compute_3dcurvatures(img,contours,opticalCenter,factor=0.1):
-    curvatures = []
-    for point in contours:
-        curvature = get_line_pixels_and_curvature(img, point, opticalCenter,factor)
-        curvatures.append(curvature)
-    return np.asarray(curvatures).reshape(-1)
+def compute_3dcurvatures(img,contours,factor=40):
+
+    """
+       计算每个点的曲率。
+
+       参数：
+       contours : numpy.array, shape (n, 2)
+           轮廓点坐标列表。
+
+       返回：
+       numpy.array, shape (n,)
+           每个点的曲率。
+       """
+    n = contours.shape[0]
+    curvatures = np.zeros(n)
+
+    for i in range(n):
+        # 取前后两个点，注意处理边界条件
+        prev = contours[(i - 1) % n]
+        curr = contours[i]
+        next = contours[(i + 1) % n]
+
+        # 计算两条线段的长度
+        BC = curr - prev
+        BA = next - curr
+
+
+        BA_normalized = BA / np.linalg.norm(BA)
+        BC_normalized = BC / np.linalg.norm(BC)
+
+        bisector = BA_normalized + BC_normalized
+        bisector_normalized = (bisector / np.linalg.norm(bisector)) * factor
+
+        # 计算曲率
+        curvatures[i] = get_line_pixels_and_curvature(img, curr, bisector_normalized)
+
+    return curvatures
+
 

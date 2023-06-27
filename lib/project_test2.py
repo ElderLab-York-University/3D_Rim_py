@@ -1,8 +1,37 @@
+import math
+import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import numpy as np
 import trimesh
 import matplotlib.pyplot as plt
+from trimesh.intersections import mesh_plane
+from sklearn.decomposition import PCA
 
+from edge_to_contours import edge_to_contours
+def compute_camera_matrices(fov, camera_position):
+    # 首先，定义图像平面的大小
+    img_width = 640
+    img_height = 480
+
+    # 计算焦距
+    f = img_width / (2 * np.tan(fov / 2))
+
+    # 内参矩阵
+    K = np.array([[f, 0, img_width / 2],
+                  [0, f, img_height / 2],
+                  [0, 0, 1]])
+
+    # 外参矩阵
+    # 我们假设相机看向 -Z 方向，并且相机的 "上" 方向是 +Y 方向。
+    R = np.array([[1, 0, 0],
+                  [0, 1, 0],
+                  [0, 0, -1]])
+
+    T = -R @ camera_position
+
+    RT = np.hstack([R, T.reshape(3, 1)])
+
+    return K, RT
 def perspective_matrix(fov, aspect, near, far):
     # fov 应该是以度为单位，将其转换为弧度
     fov_rad = np.deg2rad(fov)
@@ -21,7 +50,18 @@ def perspective_matrix(fov, aspect, near, far):
 
     return projection_matrix
 
+'''
+def are_points_in_same_plane(points):
+    pca = PCA(n_components=3)
+    pca.fit(points)
+    eigenvalues = np.sort(pca.explained_variance_)
+    return np.isclose(eigenvalues[0], 0, atol=1e-8)
+'''
+
 mesh = trimesh.load('cow.obj',force='mesh')
+mesh.merge_vertices()
+mesh.remove_duplicate_faces()
+#mesh = trimesh.primitives.Sphere()
 print(mesh.is_watertight)
 scene = mesh.scene()
 
@@ -35,14 +75,102 @@ mesh.apply_transform(rotation_matrix)
 
 
 from trimesh_projection_copy import perspective_projected
-path2d = perspective_projected(mesh,[0,0,-1],perspective_matrix(45,1,1,100))
-fig, ax = plt.subplots()
+camera_pose = np.array([0,0,10])
+K,RT = compute_camera_matrices(math.pi/4,camera_pose)
+path2d,edges,vertices_2D = perspective_projected(mesh,K,RT)
+#contours = edge_to_contours(vertices_2D,edges)
+x_,y_ = path2d.exterior.xy
+print(type(path2d.exterior.xy))
+A = np.array(vertices_2D)
+B = np.array(path2d.exterior.xy)
+B = B.T
+A1 = A[:,0]
+B1 = B[:,0]
+A2 = A[:,1]
+B2 = B[:,1]
+sort_idx_1 = A1.argsort()
+x_index = sort_idx_1[np.searchsorted(A1,B1,sorter = sort_idx_1)]
+x_final = np.zeros_like(x_index)
+mesh_vertex_faces = mesh.vertex_faces
+mesh_vertex_3d = mesh.vertices
+mesh_faces = mesh.faces
+for i,x in enumerate(x_index):
+    point = A[x]
+    contour_point = B[i]
+    if np.allclose(point,contour_point) :
+        x_final[i] = x
+    else:
+        x_final[i] = -1
 
-# 绘制MultiPolygon
-for polygon in path2d.geoms:
-    x,y = polygon.exterior.xy
-    ax.plot(x, y)
+z_axis = np.array([0,0,-1])
+curvature = []
+for i in x_final:
+    if i == -1:
+        curvature.append(-1)
+    else:
+        vertex = mesh_vertex_3d[i]
+        faces = mesh_vertex_faces[i]
+        lines = []
+        v = vertex-camera_pose
+        plane_normal = z_axis-(np.dot(z_axis, v)/np.dot(v, v))*v
+        for f_index in faces:
+            if f_index == -1:
+                pass
+            else:
+                face = mesh_faces[f_index]
+                def_face = [[0,1,2]]
+                tri_vertices = [ mesh_vertex_3d[face[0]], mesh_vertex_3d[face[1]], mesh_vertex_3d[face[2]]]
+                triangle = trimesh.Trimesh(vertices=tri_vertices, faces=def_face)
+                w = np.cross(plane_normal, v)
+                line = mesh_plane(mesh=triangle, plane_normal=w, plane_origin=vertex)
+                if line.shape[0]>0:
+                    lines.append(line[0])
+        vectors = []
+        for line in lines:
+            v = line-vertex;
+            non_zero_v = v[np.nonzero(v)]
+            vectors.append(non_zero_v)
 
-# 显示图形
+        if len(vectors)>0:
+            max_neg = 0
+            max_pos = 0
+            max_ang_neg = 0
+            max_ang_pos = 0
+            v0 = vectors[0]
+            for i in range(1,len(vectors)):
+                vi = vectors[i]
+                cross = np.dot(np.cross(v0,vi),w)
+                dot = abs(np.dot(v0,vi))
+                if cross>0 and dot>max_ang_pos:
+                    max_pos = i
+                    max_ang_pos = dot
+                elif cross<0 and dot>max_ang_neg:
+                    max_neg = i
+                    max_ang_neg = dot
+                else:
+                    pass
+            angle = max_ang_pos+max_ang_neg
+            arclen = np.linalg.norm(vectors[max_pos])+np.linalg.norm(vectors[max_neg])
+            curvature.append(angle/arclen)
+        else:
+            curvature.append(-1)
 plt.show()
-print(111)
+
+cmap_positive = plt.get_cmap("Blues")  # 用于大于0的值
+cmap_negative = mcolors.ListedColormap(["red"])  # 用于-1
+curvature = np.asarray(curvature)
+# 使用Normalize对象规范化颜色数据
+norm = mcolors.Normalize(vmin=curvature.min(), vmax=curvature.max(), clip=True)
+
+# 使用plt.plot绘制多边形
+
+plt.plot(x_, y_, 'k-')
+
+# 使用scatter绘制顶点，并根据顶点颜色进行着色
+for i in range(len(curvature)):
+    if curvature[i] == -1:
+        plt.scatter(x_[i], y_[i], color=cmap_negative(norm(curvature[i])))
+    else:
+        plt.scatter(x_[i], y_[i], color=cmap_positive(norm(curvature[i])))
+
+plt.show()

@@ -24,7 +24,7 @@ print(np.corrcoef(curveture3d,curveture2d))
 print(len(curveture3d))
 print('finished')
 '''
-def compare_curvature(path):
+def compare_curvature(path,i):
     data = np.load(path)
     depth = data['depth']
     height, width = depth.shape[:2]
@@ -37,6 +37,6 @@ def compare_curvature(path):
     else:
         contour = Contours[0]
         curveture2d = compute_2dcurvatures(contour)
-        curveture3d = compute_3dcurvatures(depth, contour, (center_x, center_y))
+        curveture3d = compute_3dcurvatures(depth, contour,factor=i)
         corr = np.corrcoef(curveture3d,curveture2d)[0][1]
     return corr
