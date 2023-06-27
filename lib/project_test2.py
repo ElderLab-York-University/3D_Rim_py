@@ -6,8 +6,22 @@ import trimesh
 import matplotlib.pyplot as plt
 from trimesh.intersections import mesh_plane
 from sklearn.decomposition import PCA
+from trimesh_projection_copy import perspective_projected
 
 from edge_to_contours import edge_to_contours
+def calculate_angle(x1, y1, x2, y2):
+    vector1 = np.array([x1, y1])
+    vector2 = np.array([x2, y2])
+
+    dot_product = np.dot(vector1, vector2)
+    magnitude1 = np.linalg.norm(vector1)
+    magnitude2 = np.linalg.norm(vector2)
+
+    cos_angle = dot_product / (magnitude1 * magnitude2)
+    angle = np.arccos(cos_angle)
+
+    # 将弧度转化为角度
+    return np.degrees(angle)
 def compute_camera_matrices(fov, camera_position):
     # 首先，定义图像平面的大小
     img_width = 640
@@ -62,7 +76,6 @@ mesh = trimesh.load('cow.obj',force='mesh')
 mesh.merge_vertices()
 mesh.remove_duplicate_faces()
 #mesh = trimesh.primitives.Sphere()
-print(mesh.is_watertight)
 scene = mesh.scene()
 
 angle = np.pi / 4  # 旋转 45 度
@@ -73,14 +86,11 @@ rotation_matrix = trimesh.transformations.rotation_matrix(angle, [0, 1, 0])
 # 将旋转矩阵应用到 Trimesh 对象上
 mesh.apply_transform(rotation_matrix)
 
-
-from trimesh_projection_copy import perspective_projected
 camera_pose = np.array([0,0,10])
 K,RT = compute_camera_matrices(math.pi/4,camera_pose)
 path2d,edges,vertices_2D = perspective_projected(mesh,K,RT)
 #contours = edge_to_contours(vertices_2D,edges)
 x_,y_ = path2d.exterior.xy
-print(type(path2d.exterior.xy))
 A = np.array(vertices_2D)
 B = np.array(path2d.exterior.xy)
 B = B.T
@@ -103,10 +113,24 @@ for i,x in enumerate(x_index):
         x_final[i] = -1
 
 z_axis = np.array([0,0,-1])
-curvature = []
-for i in x_final:
+curvature_tangent_surface = []
+curvature_contours_surface = []
+for idx,i in enumerate(x_final):
+    p1 = idx-1
+    p2 = idx
+    p3 = (idx+1)%len(x_final)
+    x1 = x_[p1]-x_[p2]
+    x2 = x_[p3]-x_[p2]
+    y1 = y_[p1]-y_[p2]
+    y2 = y_[p3]-y_[p2]
+
+    angle = calculate_angle(x1,x2,y1,y2)
+    arclen = np.linalg.norm([x1,y1])+np.linalg.norm([x2,y2])
+    if angle == 0:
+        print(idx)
+    curvature_contours_surface.append(angle/arclen)
     if i == -1:
-        curvature.append(-1)
+        curvature_tangent_surface.append(-1)
     else:
         vertex = mesh_vertex_3d[i]
         faces = mesh_vertex_faces[i]
@@ -151,16 +175,22 @@ for i in x_final:
                     pass
             angle = max_ang_pos+max_ang_neg
             arclen = np.linalg.norm(vectors[max_pos])+np.linalg.norm(vectors[max_neg])
-            curvature.append(angle/arclen)
+
+            curvature_tangent_surface.append(angle/arclen)
         else:
-            curvature.append(-1)
+            curvature_tangent_surface.append(-1)
+
+curvature = np.asarray(curvature_tangent_surface)
+curvature_tangent_surface_final = curvature_tangent_surface[np.argwhere(curvature_tangent_surface>=0 and curvature_contours_surface >=0 )]
+curvature_contours_surface_final = curvature_contours_surface[np.argwhere(curvature_tangent_surface>=0 and curvature_contours_surface >=0 )]
+
+
 plt.show()
 
 cmap_positive = plt.get_cmap("Blues")  # 用于大于0的值
 cmap_negative = mcolors.ListedColormap(["red"])  # 用于-1
-curvature = np.asarray(curvature)
 # 使用Normalize对象规范化颜色数据
-norm = mcolors.Normalize(vmin=curvature.min(), vmax=curvature.max(), clip=True)
+norm = mcolors.Normalize(vmin=np.argwhere(curvature>0).min(), vmax=curvature.max(), clip=True)
 
 # 使用plt.plot绘制多边形
 
