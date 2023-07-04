@@ -9,7 +9,9 @@ import numpy as np
 import pyrender
 
 lock = threading.Lock()
-
+corrections = []
+for i in range(0,12):
+    corrections.append([])
 
 def find_obj_files(path):
     obj_files = []
@@ -23,10 +25,20 @@ def find_obj_files(path):
 def convert(objPth,depthOutDir,dir_name):
     mesh = renderObj.loadAndScale(objPth)
     for fov in range(2,12):
-        for i in range(0,100):
+        for i in range(0,10):
             depthOutFile = os.path.join(depthOutDir, "fov_pi_"+str(fov)+"_"+ str(i) + dir_name + ".npz")
-            normals, depth, rotate_angle = renderObj.renderNomral(r, mesh,yfov=math.pi/fov)
-            np.savez(depthOutFile, depth=depth, rotate_angle=rotate_angle)
+            if not os.path.exists(depthOutFile):
+                c1 = None
+                try:
+                    c1, c2, contours,rotations = renderObj.gen_contours_and_curvature(mesh,yfov=math.pi/fov)
+                except:
+                    pass
+                if c1 is not None:
+                    correction = np.corrcoef(c1,c2)[0][1]
+                    corrections[fov].append(correction)
+                    np.savez(depthOutFile, c1=contours, c2=c2,contours=contours,rotations=rotations,correction=correction)
+            else:
+                corrections[fov].append(np.load(depthOutFile)['correction'])
 
 def touint8(array):
     try:
@@ -62,5 +74,8 @@ if __name__ == "__main__":
         os.makedirs(depthPth, exist_ok=True)
         dir_name = dir_name.replace('\\', '')
         convert(obj_file, depthPth,dir_name)
+    for i,correction in enumerate(corrections):
+        np.save('corrections'+str(i)+'.npy',correction)
+
 
 

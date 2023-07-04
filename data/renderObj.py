@@ -1,6 +1,7 @@
 import math
 import time
 import random
+import alphashape
 
 import imageio
 import numpy
@@ -12,25 +13,49 @@ import matplotlib.pyplot as plt
 import cv2
 from PIL import Image
 from pyrender.shader_program import ShaderProgramCache
+from scipy.optimize import fmin
+
+from experiments.cal_curvature import cal_curvatrue
 
 
-def normalize_mesh(mesh):
-    # Translate the mesh to the origin
-    mesh_AABB_center = mesh.centroid
-    mesh_geo_center = compute_mesh_center(mesh)
-    mesh.apply_translation(-mesh_geo_center)
-    # Scale the mesh to have a uniform size (e.g., the longest dimension equals 1)
-    mesh_bounds = mesh.bounds
-    mesh_max_1 = mesh_bounds[1] - mesh_geo_center
-    mesh_max_2 = mesh_bounds[0] - mesh_geo_center
-    mesh_max_1 = abs(mesh_max_1)
-    mesh_max_2 = abs(mesh_max_2)
+def normalize_mesh(mesh,fov):
+    # rewrite from yiming's code
+    mean_mesh_z = np.mean(mesh.vertices[:, 2])
+    mesh.apply_scale(mean_mesh_z)
+    X = mesh.vertices[:,0]
+    Y = mesh.vertices[:,1]
+    Z = mesh.vertices[:,2]
 
-    mesh_max_1 = mesh_max_1.max()
-    mesh_max_2 = mesh_max_2.max()
-    max_dimension = max(mesh_max_1,mesh_max_2)
-    mesh.apply_scale(0.5 / max_dimension)
+    centroid = mesh.centroid
+    mesh.apply_translation(-centroid)
+    R = np.sqrt(X**2+Y**2)
+    r = R.max()
+    excpet_r = math.sin(fov/2)
+    mesh.apply_scale(excpet_r/r)
     return mesh
+def fov_err(a,X,Y,Z,fov):
+    Z = a*(Z-1)+1
+    X = a*X
+    Y = a*Y
+    x = np.divide(X,Z)
+    y = np.divide(Y,Z)
+
+    points = np.asarray((x,y)).T
+    alpha_shape = alphashape.alphashape(points,0.8)
+    centroid = alpha_shape.centroid
+
+    x = x-centroid.x
+    y = y-centroid.y
+    R = np.sqrt(x**2+y**2)
+    if Z.min() <=0:
+        return math.inf
+    else:
+        return (np.arctan(R).max()-fov/2)**2
+
+
+
+
+
 
 def compute_mesh_center(mesh):
     vex3d = np.asarray(mesh.vertices)
@@ -65,30 +90,6 @@ def create_point_cloud_mesh(points, colors=None, point_size=0.005):
         scale=np.array([point_size, point_size, point_size]),
     )
     return point_cloud
-def find_occluding_contours(color, depth, depth_threshold=0.01, canny_low_threshold=100, canny_high_threshold=200):
-    # Normalize depth image
-    depth_normalized = np.copy(depth)
-    depth_normalized[depth_normalized!=0] = 1
-    depth_normalized = (depth_normalized * 255).astype(np.uint8)
-    # Apply Canny edge detection on the depth image
-    edges = cv2.Canny(depth_normalized, canny_low_threshold, canny_high_threshold)
-
-    # Dilate the edges to make them more prominent
-    kernel = np.ones((3, 3), np.uint8)
-    edges = cv2.dilate(edges, kernel, iterations=1)
-
-    # Create a mask based on the depth discontinuity
-    depth_diff = cv2.absdiff(depth, cv2.GaussianBlur(depth, (5, 5), 0))
-    depth_mask = (depth_diff > depth_threshold).astype(np.uint8) * 255
-
-    # Combine the edges and the depth mask to obtain the occluding contours
-    occluding_contours = cv2.bitwise_and(edges, depth_mask)
-
-    # Optionally, overlay the occluding contours on the original color image
-    color_with_contours = color.copy()
-    color_with_contours[occluding_contours > 0] = [0, 255, 0]
-
-    return occluding_contours, color_with_contours
 def normalize(vector):
     return vector / np.linalg.norm(vector)
 
@@ -108,80 +109,15 @@ def camera_matrix(camera_position, target_position, up_direction):
     return view_matrix
 
 
-def loadAndScale(objpth):
-    loadedMesh = trimesh.load(objpth,force='mesh')
-    scaledMesh = normalize_mesh(loadedMesh)
-    return scaledMesh
-def render(r,scaledMesh,yfov=np.pi/3.0,aspectRatio=1.0,camera_pose=None,r_axis=[0,1,0],r_angle=0):
-    rotatedMesh = rotate_trimesh(scaledMesh,r_axis,r_angle)
-    scene = trimesh.Scene()
-    scene.add_geometry(rotatedMesh)
 
-    camera = pyrender.PerspectiveCamera(yfov=yfov, aspectRatio=aspectRatio)
-
-
-    light = pyrender.SpotLight(color=np.ones(3), intensity=3.0,innerConeAngle = np.pi / 16.0,outerConeAngle = np.pi / 6.0)
-    if camera_pose is not None:
-        scene.add(camera, pose=camera_pose)
-    else:
-        camera_distance = 0.6 / math.tan(yfov / 2)+0.5
-        default_pose = np.array([
-            [1.0, 0.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, camera_distance],
-            [0.0, 0.0, 0.0, 1.0],
-        ])
-        scene.add(camera, pose=default_pose)
-
-    scene.add(light, pose=camera_pose)
-
-    color, depth = r.render(scene)
-
-
-   # occluding_contours, color_with_contours = find_occluding_contours(color, depth)
-
-    return depth
-
-
-def renderNomral(r,scaledMesh,yfov=np.pi/24.0,aspectRatio=1.0,camera_pose=None):
+def gen_contours_and_curvature(scaledMesh,yfov):
     rotate_angle = np.random.rand(3)*360
     rotatedMesh = rotate_trimesh(scaledMesh,[0,1,0],rotate_angle[0])
     rotatedMesh = rotate_trimesh(rotatedMesh,[1,0,0],rotate_angle[1])
     rotatedMesh = rotate_trimesh(rotatedMesh,[0,0,1],rotate_angle[2])
-    if isinstance(rotatedMesh,trimesh.points.PointCloud):
-        points = rotatedMesh.vertices
-        colors = rotatedMesh.colors
-        point_cloud_mesh = create_point_cloud_mesh(points, colors)
-        scene = pyrender.Scene()
-        scene.add_node(point_cloud_mesh)
-    else:
-        if isinstance(rotatedMesh, trimesh.Trimesh):
-            trimeshScene = trimesh.Scene()
-            trimeshScene.add_geometry(rotatedMesh)
-        else:
-            trimeshScene = rotatedMesh
-        scene = pyrender.Scene.from_trimesh_scene(trimeshScene)
+    curvature_1,curvature_2,contours=cal_curvatrue(rotatedMesh,yfov)
+    return curvature_1,curvature_2,contours,rotate_angle
 
-
-    camera = pyrender.PerspectiveCamera(yfov=yfov, aspectRatio=aspectRatio)
-
-
-    light = pyrender.SpotLight(color=np.ones(3), intensity=3.0,innerConeAngle = np.pi / 16.0,outerConeAngle = np.pi / 6.0)
-    if camera_pose is not None:
-        scene.add(camera, pose=camera_pose)
-    else:
-        camera_distance = 0.6 / math.tan(yfov / 2)+0.5
-        default_pose = np.array([
-            [1.0, 0.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, camera_distance],
-            [0.0, 0.0, 0.0, 1.0],
-        ])
-        scene.add(camera, pose=default_pose)
-
-    scene.add(light, pose=camera_pose)
-
-    normals, depth = r.render(scene)
     # occluding_contours, color_with_contours = find_occluding_contours(color, depth)
 
     return normals,depth,rotate_angle
@@ -190,8 +126,6 @@ if __name__ == "__main__":
     plyPath = './testData/cow.obj'
     r._renderer._program_cache = ShaderProgramCache(shader_dir="shaders")
 
-    normals,depth,rotate_angle = renderNomral(r,loadAndScale(plyPath))
-    np.savez('depth.npz',depth=depth,rotate_angle=rotate_angle)
-    plt.imsave('depth_image.png', depth, cmap='gray')
+
 
 

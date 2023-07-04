@@ -101,110 +101,111 @@ def map_points_to_image(points_3d, K, RT):
 
     return points_2d[:, :2]  # 只返回x和y坐标
 
-def cal_curvatrue(obj_name,rotations,fov,camera):
-    mesh = trimesh.load(obj_name, force='mesh')
+def cal_curvatrue(rotatedMesh,fov):
+    mesh = rotatedMesh
     mesh.merge_vertices()
     mesh.remove_duplicate_faces()
-    # mesh = trimesh.primitives.Sphere()
-    angle = np.pi / 4  # 旋转 45 度
-    # 创建一个旋转矩阵，围绕 z 轴旋转
-    rotation_matrix = trimesh.transformations.rotation_matrix(angle, [0, 1, 0])
-    # 将旋转矩阵应用到 Trimesh 对象上
-    mesh.apply_transform(rotation_matrix)
-    camera_pose = np.array([0, 0, 10])
+    camera_pose = np.array([0, 0, 1]) #look at 0,0,0
     K, RT = compute_camera_matrices(fov, camera_pose)
     path2d, edges, vertices_2D = perspective_projected(mesh, K, RT)
     # contours = edge_to_contours(vertices_2D,edges)
-    x_, y_ = path2d.exterior.xy
-    A = np.array(vertices_2D)
-    B = np.array(path2d.exterior.xy)
-    B = B.T
-    A1 = A[:, 0]
-    B1 = B[:, 0]
-    sort_idx_1 = A1.argsort()
-    x_index = sort_idx_1[np.searchsorted(A1, B1, sorter=sort_idx_1)]
-    x_final = np.zeros_like(x_index)
-    mesh_vertex_faces = mesh.vertex_faces
-    mesh_vertex_3d = mesh.vertices
-    mesh_faces = mesh.faces
-    for i, x in enumerate(x_index):
-        point = A[x]
-        contour_point = B[i]
-        if np.allclose(point, contour_point):
-            x_final[i] = x
-        else:
-            x_final[i] = -1
-
-    z_axis = np.array([0, 0, -1])
-    curvature_tangent_surface = []
-    curvature_contours_surface = []
-    for idx, i in enumerate(x_final):
-        p1 = idx - 1
-        p2 = idx
-        p3 = (idx + 1) % len(x_final)
-        x1 = x_[p1] - x_[p2]
-        x2 = x_[p3] - x_[p2]
-        y1 = y_[p1] - y_[p2]
-        y2 = y_[p3] - y_[p2]
-
-        angle = calculate_angle(x1, x2, y1, y2)
-        arclen = np.linalg.norm([x1, y1]) + np.linalg.norm([x2, y2])
-        if angle == 0:
-            print(idx)
-        curvature_contours_surface.append(angle / arclen)
-        if i == -1:
-            curvature_tangent_surface.append(-1)
-        else:
-            vertex = mesh_vertex_3d[i]
-            faces = mesh_vertex_faces[i]
-            lines = []
-            v = vertex - camera_pose
-            plane_normal = z_axis - (np.dot(z_axis, v) / np.dot(v, v)) * v
-            for f_index in faces:
-                if f_index == -1:
-                    pass
-                else:
-                    face = mesh_faces[f_index]
-                    def_face = [[0, 1, 2]]
-                    tri_vertices = [mesh_vertex_3d[face[0]], mesh_vertex_3d[face[1]], mesh_vertex_3d[face[2]]]
-                    triangle = trimesh.Trimesh(vertices=tri_vertices, faces=def_face)
-                    w = np.cross(plane_normal, v)
-                    line = mesh_plane(mesh=triangle, plane_normal=w, plane_origin=vertex)
-                    if line.shape[0] > 0:
-                        lines.append(line[0])
-            vectors = []
-            for line in lines:
-                v = line - vertex;
-                non_zero_v = v[np.nonzero(v)]
-                vectors.append(non_zero_v)
-
-            if len(vectors) > 0:
-                max_neg = 0
-                max_pos = 0
-                max_ang_neg = 0
-                max_ang_pos = 0
-                v0 = vectors[0]
-                for i in range(1, len(vectors)):
-                    vi = vectors[i]
-                    cross = np.dot(np.cross(v0, vi), w)
-                    dot = abs(np.dot(v0, vi))
-                    if cross > 0 and dot > max_ang_pos:
-                        max_pos = i
-                        max_ang_pos = dot
-                    elif cross < 0 and dot > max_ang_neg:
-                        max_neg = i
-                        max_ang_neg = dot
-                    else:
-                        pass
-                angle = max_ang_pos + max_ang_neg
-                arclen = np.linalg.norm(vectors[max_pos]) + np.linalg.norm(vectors[max_neg])
-
-                curvature_tangent_surface.append(angle / arclen)
+    if hasattr(path2d,'exterior'):
+        x_, y_ = path2d.exterior.xy
+        A = np.array(vertices_2D)
+        B = np.array(path2d.exterior.xy)
+        B = B.T
+        A1 = A[:, 0]
+        B1 = B[:, 0]
+        sort_idx_1 = A1.argsort()
+        x_index = sort_idx_1[np.searchsorted(A1, B1, sorter=sort_idx_1)]
+        x_final = np.zeros_like(x_index)
+        mesh_vertex_faces = mesh.vertex_faces
+        mesh_vertex_3d = mesh.vertices
+        mesh_faces = mesh.faces
+        for i, x in enumerate(x_index):
+            point = A[x]
+            contour_point = B[i]
+            if np.allclose(point, contour_point):
+                x_final[i] = x
             else:
-                curvature_tangent_surface.append(-1)
+                x_final[i] = -1
 
-    curvature_tangent_surface_final = curvature_tangent_surface[
-    np.argwhere(curvature_tangent_surface >= 0 and curvature_contours_surface >= 0)]
-    curvature_contours_surface_final = curvature_contours_surface[
-    np.argwhere(curvature_tangent_surface >= 0 and curvature_contours_surface >= 0)]
-    return curvature_contours_surface_final,curvature_tangent_surface_final
+        z_axis = np.array([0, 0, -1])
+        curvature_tangent_surface = []
+        curvature_contours_surface = []
+        for idx, i in enumerate(x_final):
+            p1 = idx - 1
+            p2 = idx
+            p3 = (idx + 1) % len(x_final)
+            x1 = x_[p1] - x_[p2]
+            x2 = x_[p3] - x_[p2]
+            y1 = y_[p1] - y_[p2]
+            y2 = y_[p3] - y_[p2]
+
+            angle = calculate_angle(x1, x2, y1, y2)
+            arclen = np.linalg.norm([x1, y1]) + np.linalg.norm([x2, y2])
+            curvature_contours_surface.append(angle / arclen)
+            if i == -1:
+                curvature_tangent_surface.append(-1)
+            else:
+                vertex = mesh_vertex_3d[i]
+                faces = mesh_vertex_faces[i]
+                lines = []
+                v = vertex - camera_pose
+                plane_normal = z_axis - (np.dot(z_axis, v) / np.dot(v, v)) * v
+                for f_index in faces:
+                    if f_index == -1:
+                        pass
+                    else:
+                        face = mesh_faces[f_index]
+                        def_face = [[0, 1, 2]]
+                        tri_vertices = [mesh_vertex_3d[face[0]], mesh_vertex_3d[face[1]], mesh_vertex_3d[face[2]]]
+                        triangle = trimesh.Trimesh(vertices=tri_vertices, faces=def_face)
+                        w = np.cross(plane_normal, v)
+                        line = mesh_plane(mesh=triangle, plane_normal=w, plane_origin=vertex)
+                        if line.shape[0] > 0:
+                            lines.append(line[0])
+                vectors = []
+                for line in lines:
+                    v = line - vertex;
+                    if (v[0]==0).all():
+                        vectors.append(v[1])
+                    else:
+                        vectors.append(v[0])
+
+                if len(vectors) > 0:
+                    max_neg = 0
+                    max_pos = 0
+                    max_ang_neg = 0
+                    max_ang_pos = 0
+                    v0 = vectors[0]
+                    for i in range(1, len(vectors)):
+                        vi = vectors[i]
+                        cross = np.dot(np.cross(v0, vi), w)
+                        dot = abs(np.dot(v0, vi))
+                        if cross > 0 and dot > max_ang_pos:
+                            max_pos = i
+                            max_ang_pos = dot
+                        elif cross < 0 and dot > max_ang_neg:
+                            max_neg = i
+                            max_ang_neg = dot
+                        else:
+                            pass
+                    angle = max_ang_pos + max_ang_neg
+                    arclen = np.linalg.norm(vectors[max_pos]) + np.linalg.norm(vectors[max_neg])
+
+                    curvature_tangent_surface.append(angle / arclen)
+                else:
+                    curvature_tangent_surface.append(-1)
+        curvature_tangent_surface_final = []
+        curvature_contours_surface_final = []
+        for i in range(0,len(curvature_tangent_surface)):
+            if curvature_tangent_surface[i] == -1 or curvature_contours_surface[i] == -1:
+                pass
+            else:
+                curvature_tangent_surface_final.append(curvature_tangent_surface[i])
+                curvature_contours_surface_final.append(curvature_contours_surface[i])
+
+        return curvature_contours_surface_final,curvature_tangent_surface_final,path2d.exterior.xy
+    else:
+        return None,None,None
