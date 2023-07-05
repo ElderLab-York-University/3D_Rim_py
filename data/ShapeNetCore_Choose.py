@@ -10,7 +10,7 @@ from experiments.cal_give_obj import cal
 from data import renderObj
 
 shape_net_core_path = '../ShapeNetCore.v2'
-sample_path = '../ShapeNetCoreSample'
+sample_path = '../ShapeNetCoreSample2'
 max_num_sample_pre_class = 10
 max_num_sample_pre_obj = 10
 num_class = 55
@@ -49,7 +49,7 @@ if __name__ == '__main__':
         combinations = random.sample(obj_files, min(len(obj_files), max_num_sample_pre_class))
         sampled_objs.extend(combinations)
 
-    with multiprocessing.Pool(processes=4) as pool:
+    with multiprocessing.Pool(processes=8) as pool:
         # 使用 tqdm 显示进度
         for _ in tqdm(pool.imap_unordered(cal, sampled_objs), total=len(sampled_objs)):
             pass

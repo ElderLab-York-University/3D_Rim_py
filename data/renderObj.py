@@ -20,15 +20,13 @@ from experiments.cal_curvature import cal_curvatrue
 
 def normalize_mesh(mesh,fov):
     # rewrite from yiming's code
-    mean_mesh_z = np.mean(mesh.vertices[:, 2])
-    mesh.apply_scale(mean_mesh_z)
     X = mesh.vertices[:,0]
     Y = mesh.vertices[:,1]
     Z = mesh.vertices[:,2]
 
     centroid = mesh.centroid
     mesh.apply_translation(-centroid)
-    R = np.sqrt(X**2+Y**2)
+    R = np.sqrt(X**2+Y**2+Z**2)
     r = R.max()
     excpet_r = math.sin(fov/2)
     mesh.apply_scale(excpet_r/r)
