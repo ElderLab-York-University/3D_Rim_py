@@ -12,14 +12,14 @@ from tqdm import tqdm
 from experiments.cal_give_obj import cal
 from data import renderObj
 import re
-sample_path = '../ShapeNetCoreSample2'
+sample_path = '../ShapeNetCoreSampleFinal'
 max_num_sample_pre_class = 10
 max_num_sample_pre_obj = 10
 num_class = 55
 
 sampled = np.zeros(55)
 
-total_correlation = []
+total_correlation = {}
 
 def get_subdirectories(directory):
     return [d for d in os.listdir(directory) if os.path.isdir(os.path.join(directory, d))]
@@ -54,25 +54,49 @@ def load_npz_files(directory):
     rotations = {}
     filenames_refer = {}
     class_based_correlation = {}
+    vaild_maps = {}
+    angle = {}
+    vertex_3d = {}
     for a in file_dict:
+        if a not in total_correlation:
+            total_correlation[a] = []
         c1[a] = []
         c2[a] = []
         contours[a] = []
         rotations[a] = []
         class_based_correlation[a] = []
         filenames_refer[a] = []
+        vaild_maps[a] = []
+        angle[a] = []
+        vertex_3d[a] = []
         for file in file_dict[a]:
-            with np.load(file) as data:
-                c1[a].append(data['c1'])
-                c2[a].append(data['c2'])
-                contours[a].append(data['contours'])
-                rotations[a].append(data['rotations'])
-                filenames_refer[a].append(file)
-                correlation_file = np.corrcoef(data['c1'],data['c2'])[0][1]
-                class_based_correlation[a].append(correlation_file)
-                total_correlation.append(correlation_file)
+            with np.load(file,allow_pickle=True) as data:
+                vaild_map = data['vaild_map']
+                counter_ = data['contours']
+                rotation_ = data['rotations']
+                c1_ = data['c1']
+                c2_ = data['c2']
+                angle_ = data['angle']
+                vertex_3d_ = data['vertex_3d']
 
-    return c1,c2,contours,rotations,class_based_correlation,filenames_refer
+                c1_ = c1_[vaild_map]
+                c2_ = c2_[vaild_map]
+                angle_ = angle_[vaild_map]
+
+                vertex_3d[a].append(vertex_3d_)
+                angle[a].append(angle_)
+                c1[a].append(c1_)
+                c2[a].append(c2_)
+                contours[a].append(counter_)
+                rotations[a].append(rotation_)
+                filenames_refer[a].append(file)
+                correlation_file = np.corrcoef(c1_,c2_)[0][1]
+
+                class_based_correlation[a].append(correlation_file)
+                total_correlation[a].append(correlation_file)
+                vaild_maps[a].append(vaild_map)
+
+    return c1,c2,contours,rotations,class_based_correlation,filenames_refer,vaild_maps,angle
 
 class_paths = get_subdirectories(sample_path)
 
@@ -82,12 +106,11 @@ for class_path in tqdm(class_paths):
     npz_dict = load_npz_files(os.path.join(sample_path, class_path))
     all_npz_files.append(npz_dict)
 
-with open("total_correlation.pkl", "wb") as f:
+with open("total_correlation_v8.pkl", "wb") as f:
     # 使用pickle.dump将字典保存到文件
     pickle.dump(total_correlation, f)
 
-with open("all_npz_files.pkl", "wb") as f:
+with open("all_npz_files_v8.pkl", "wb") as f:
     # 使用pickle.dump将字典保存到文件
     pickle.dump(all_npz_files, f)
-plt.hist(total_correlation,bins=50)
-plt.show()
+

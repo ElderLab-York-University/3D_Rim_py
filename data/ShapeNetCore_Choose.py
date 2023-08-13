@@ -3,11 +3,12 @@ import math
 import os
 import random
 import multiprocessing
+from tqdm import tqdm
 from p_tqdm import p_uimap, p_map
 import numpy as np
-from tqdm import tqdm
 from experiments.cal_give_obj import cal
 from data import renderObj
+from experiments.cal_give_obj2 import cal2
 
 shape_net_core_path = '../ShapeNetCore.v2'
 sample_path = '../ShapeNetCoreSample2'
@@ -49,8 +50,13 @@ if __name__ == '__main__':
         combinations = random.sample(obj_files, min(len(obj_files), max_num_sample_pre_class))
         sampled_objs.extend(combinations)
 
+
     with multiprocessing.Pool(processes=8) as pool:
         # 使用 tqdm 显示进度
         for _ in tqdm(pool.imap_unordered(cal, sampled_objs), total=len(sampled_objs)):
             pass
 
+    '''
+    for obj in sampled_objs:
+        cal2(obj)
+    '''

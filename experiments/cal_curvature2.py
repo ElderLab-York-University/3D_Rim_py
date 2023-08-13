@@ -1,6 +1,7 @@
 import math
 import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
+import numpy
 import numpy as np
 import shapely
 import trimesh
@@ -15,6 +16,8 @@ from mpl_toolkits.mplot3d import Axes3D
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 import matplotlib.colors as colors
 from skspatial.objects import Vector
+import networkx as nx
+
 def normalize(v):
     # 计算向量的长度（范数）
     norm = np.linalg.norm(v)
@@ -138,7 +141,9 @@ def project_point_to_plane(point, plane_point, plane_normal):
     projected_point = np.subtract(point, np.multiply(d, plane_normal))
     return projected_point
 
-def cal_curvature(rotatedMesh, fov):
+
+
+def cal_curvature2(rotatedMesh, fov,sample=2):
     mesh = rotatedMesh
     mesh.merge_vertices()
     mesh.remove_duplicate_faces()
@@ -170,12 +175,15 @@ def cal_curvature(rotatedMesh, fov):
             for i, x in enumerate(x_index):
                 point = A[x]
                 contour_point = B[i]
+                if i == len(x_index)-1:
+                    break
                 if np.allclose(point, contour_point):
                     x_final[i] = x
                     coutour_filter.append(True)
                 else:
                     x_final[i] = -1
                     coutour_filter.append(False)
+            coutour_filter.append(False)
             coutour_filter = np.asarray(coutour_filter)
             B = B[coutour_filter]
             x_final = x_final[coutour_filter]
@@ -190,38 +198,49 @@ def cal_curvature(rotatedMesh, fov):
                 view_vector = vertex - camera_pose
                 vertex_normal = mesh_vertex_normals[i]
                 N_plane_normal = np.cross(view_vector, vertex_normal)
-                if idx == len(x_final)-1:
-                    break
                 '''
                 plane P:
                 defined by point P and normal at view vector 
                 plane N:
                 defined by point P and normal at N_plane_normal
                 '''
+                arclen = 0
 
-                p1_idx = idx - 1
+                local_sample = int(max(min(sample, len(B) / 2 - 1), 1))
 
-                if p1_idx == -1:
-                    p1_idx = -2
+                for j in range(idx-local_sample,idx+local_sample):
+                    '''
+                    p0 = B[j % len(B)]
+                    p1 = B[(j+1) % len(B)]
+                    v = p1 - p0
+                    v = [v[0], v[1], 0]
+                    v = np.asarray(v)
+                    v = v/480
+                    '''
+                    p0 = vertex_3d[j % len(x_final)]
+                    p0_ = project_point_to_plane(p0,vertex,view_vector)
+                    p1 = vertex_3d[(j+1) % len(x_final)]
+                    p1_ = project_point_to_plane(p1,vertex,view_vector)
+                    v = p1_-p0_
+                    v = np.asarray(v)
+                    arclen += np.linalg.norm(v)
 
-                p2_idx = idx
 
-                p3_idx = (idx + 1) % len(x_final)
+                p1_idx = (idx - local_sample) % len(B)
+                p2_idx = (idx - local_sample + 1) % len(B)
+                p3_idx = (idx + local_sample - 1) % len(B)
+                p4_idx = (idx + local_sample) % len(B)
 
 
                 p1 = B[p1_idx]
                 p2 = B[p2_idx]
                 p3 = B[p3_idx]
-
+                p4 = B[p4_idx]
                 V1 = p2 - p1
-                V2 = p3 - p2
-                V1 = [V1[0], V1[1], 0]
-                V2 = [V2[0], V2[1], 0]
-                V1 = np.asarray(V1)
-                V2 = np.asarray(V2)
-                V1 = V1/480
-                V2 = V2/480
-                arclen = np.linalg.norm(V1) + np.linalg.norm(V2)
+                V2 = p4 - p3
+
+                V1 = [V1[0],V1[1],0]
+                V2 = [V2[0],V2[1],0]
 
                 V1 = normalize(V1)
                 V2 = normalize(V2)
@@ -231,15 +250,9 @@ def cal_curvature(rotatedMesh, fov):
                 a2 = np.dot(V1, V2)
                 angle = np.arctan2(a1, a2)
                 apparent_angle.append(angle)
-                apparent_value = angle / (arclen / 2)
+                apparent_value = angle / (arclen / local_sample*2)
 
                 curvature_apparent.append(apparent_value)
-
-
-
-
-
-
                 '''valid_map
                 RMS distance of the point 
                 '''
@@ -251,142 +264,78 @@ def cal_curvature(rotatedMesh, fov):
                     raise RuntimeError("wrong index")
                 else:
 
-                    vertex = mesh_vertex_3d[i]
-                    faces = mesh_vertex_faces[i]
-                    lines = []
-                    '''
-                    for each triangle 
-                    '''
-                    for f_index in faces:
-                        if f_index == -1:
-                            pass
-                        else:
-                            face = mesh_faces[f_index]
-                            def_face = [[0, 1, 2]]
-                            tri_vertices = [mesh_vertex_3d[face[0]], mesh_vertex_3d[face[1]], mesh_vertex_3d[face[2]]]
-                            triangle = trimesh.Trimesh(vertices=tri_vertices, faces=def_face)
-                            line = mesh_plane(mesh=triangle, plane_normal=N_plane_normal, plane_origin=vertex)
-                            if line.shape[0] > 0:
-                                lines.append(line[0])
-                    vectors = []
-                    for line in lines:
-                        v = line - vertex;
-                        if (v[0] == 0).all():
-                            vectors.append(v[1])
-                        else:
-                            vectors.append(v[0])
+                    vertex = np.asarray(mesh_vertex_3d[i])
+                    G = nx.Graph()
+                    lines = mesh_plane(mesh=rotatedMesh, plane_normal=N_plane_normal, plane_origin=vertex)
+                    lines = lines * 1e14
+                    lines = lines.astype(numpy.int64)
+                    vertex = vertex * 1e14
+                    vertex = vertex.astype(numpy.int64)
+                    vertex = tuple(vertex)
 
-                    if len(vectors) == 2:
-                        '''
-                        max_neg = 0
-                        max_pos = 0
-                        max_ang_neg = 0
-                        max_ang_pos = 0
-                        v0 = vectors[0]
-                        for i in range(1, len(vectors)):
-                            vi = vectors[i]
-                            cross = np.dot(np.cross(v0, vi), N_plane_normal)
-                            dot = abs(np.dot(v0, vi))
-                            if cross > 0 and dot > max_ang_pos:
-                                max_pos = i
-                                max_ang_pos = dot
-                            elif cross < 0 and dot > max_ang_neg:
-                                max_neg = i
-                                max_ang_neg = dot
+                    num_edge = G.number_of_edges()
+                    for line in lines:
+                        p1 = tuple(line[0])
+                        p2 = tuple(line[1])
+                        G.add_edge(p1,p2)
+                    arclen = 0
+                    V0 = [0,0,0]
+                    V1 = [0,0,0]
+                    visited_point = []
+                    local_sample = max(min(sample,num_edge/2-1),1)
+                    try:
+                        if vertex in G:
+                            v_neighbors = [n for n in G.neighbors(vertex)]
+                            degree = G.degree(vertex)
+                            visited_point.append(vertex)
+                            if len(v_neighbors) == 2:
+                                root_1 = vertex
+                                next_v1 = v_neighbors[0]
+                                root_2 = vertex
+                                next_v2 = v_neighbors[1]
+                                visited_point.append(next_v1)
+                                visited_point.append(next_v2)
+                                for i in range(local_sample):
+                                    V0 = np.asarray(next_v1)/1e14 - np.asarray(root_1)/1e14
+                                    arclen = arclen + np.linalg.norm(V0)
+                                    if i == sample - 1:
+                                        break
+                                    neighbors = [neighbor for neighbor in G.neighbors(next_v1) if neighbor != root_1]
+                                    if len(neighbors) != 1:
+                                        raise ValueError('bad slice')
+                                    root_1 = next_v1
+                                    next_v1 = neighbors[0]
+
+                                for i in range(local_sample):
+                                    V1 = np.asarray(next_v2)/1e14 - np.asarray(root_2)/1e14
+                                    arclen = arclen + np.linalg.norm(V1)
+                                    if i == sample - 1:
+                                        break
+                                    neighbors = [neighbor for neighbor in G.neighbors(next_v2) if neighbor != root_2]
+                                    if len(neighbors) != 1:
+                                        raise ValueError('bad slice')
+                                    root_2 = next_v2
+                                    next_v2 = neighbors[0]
                             else:
-                                pass
-                        '''
-                        angle = np.pi - calculate_angle(vectors[0], vectors[1])
-                        arclen = np.linalg.norm(vectors[0]) + np.linalg.norm(vectors[1])
-                        normal_value = angle / (arclen / 2)
+                                raise ValueError('bad slice')
+                        else:
+                            raise ValueError('bad slice')
+                        V1 = -V1
+                        V0 = normalize(V0)
+                        V1 = normalize(V1)
+                        angle = np.pi - calculate_angle(V0, V1)
+                        normal_value = angle / (arclen / sample * 2)
                         curvature_normal.append(normal_value)
                         valid_map.append(True)
-                    else:
+                    except ValueError:
                         curvature_normal.append(0)
                         valid_map.append(False)
-                        debug = False
+                        debug = True
                         if debug:
-                            fig = plt.figure(dpi=600)
-                            ax = fig.add_subplot(111, projection='3d')
+                            pass
 
-                            max_x, min_x = -1, 1
-                            max_y, min_y = -1, 1
-                            max_z, min_z = -1, 1
 
-                            trilist = []
-                            for f_index in faces:
-                                if f_index == -1:
-                                    pass
-                                else:
-                                    face = mesh_faces[f_index]
-                                    tri_vertices = [np.asarray(mesh_vertex_3d[face[0]]),
-                                                    np.asarray(mesh_vertex_3d[face[1]]),
-                                                    np.asarray(mesh_vertex_3d[face[2]])]
-                                    tri_vertices = np.asarray((tri_vertices))
-                                    max_x = max(tri_vertices[:, 0].max(), max_x)
-                                    min_x = min(tri_vertices[:, 0].min(), min_x)
 
-                                    max_y = max(tri_vertices[:, 1].max(), max_y)
-                                    min_y = min(tri_vertices[:, 1].min(), min_y)
-
-                                    max_z = max(tri_vertices[:, 2].max(), max_z)
-                                    min_z = min(tri_vertices[:, 2].min(), min_z)
-
-                                    tri = Poly3DCollection([tri_vertices], alpha=0.5)
-                                    tri.set_color(colors.rgb2hex(np.random.rand(3)))
-                                    trilist.append(tri_vertices.flatten())
-                                    ax.add_collection3d(tri)
-
-                            normal = N_plane_normal
-                            v_normal = vertex_normal
-                            '''
-                            d = -point.dot(normal)
-    
-                            nx, ny = (50, 50)
-                            x = np.linspace(max(max_x,max_y,max_z)*2-(max(max_x,max_y,max_z)-min(min_x,min_y,min_z))*4, max(max_x,max_y,max_z)*2, nx)
-                            y = np.linspace(max(max_x,max_y,max_z)*2-(max(max_x,max_y,max_z)-min(min_x,min_y,min_z))*4, max(max_x,max_y,max_z)*2, ny)
-    
-                            xx, yy = np.meshgrid(x, y)
-    
-                            z = (-normal[0] * xx - normal[1] * yy - d) * 1. / normal[2]
-    
-                            ax.plot_surface(xx, yy, z,alpha=0.2)
-                            '''
-                            ax.quiver(vertex[0], vertex[1], vertex[2], normal[0], normal[1], normal[2], length=0.01,
-                                      normalize=True, color='blue')
-                            ax.quiver(vertex[0], vertex[1], vertex[2], v_normal[0], v_normal[1], v_normal[2], length=0.01,
-                                      normalize=True, color='red')
-                            ax.quiver(vertex[0], vertex[1], vertex[2], view_vector[0], view_vector[1], view_vector[2],
-                                      length=0.01, normalize=True, color='green')
-
-                            ax.scatter(vertex[0], vertex[1], vertex[2], marker='*', color='red', s=2)
-
-                            ax.set_aspect('equal')
-
-                            ax.set_xlim([min_x, max_x])
-                            ax.set_ylim([min_y, max_y])
-                            ax.set_zlim([min_z, max_z])
-
-                            ax.plot([], [], [], color="r", label="vertex normal")
-                            ax.plot([], [], [], color="g", label="view_vector")
-                            ax.plot([], [], [], color="b", label="plane normal")
-                            ax.set_xlabel("x")
-                            ax.set_ylabel("y")
-                            ax.set_zlabel("z")
-                            ax.legend()
-                            plt.title("virtualization of normal curvature computation")
-
-                            plt.show()
-
-            '''
-            #fiter out invaild result
-            for i in range(0,len(curvature_apparent)):
-                if curvature_apparent[i] == -1 or curvature_normal[i] == -1:
-                    pass
-                else:
-                    curvature_tangent_surface_final.append(curvature_apparent[i])
-                    curvature_contours_surface_final.append(curvature_normal[i])
-            '''
             return curvature_apparent, curvature_normal, B, valid_map,apparent_angle,vertex_3d
         else:
             return None, None, None, None, None,None
