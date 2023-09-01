@@ -1,21 +1,9 @@
 import math
-import time
-import random
 import alphashape
-
-import imageio
-import numpy
 import pyrender
 import scipy.spatial
 import trimesh
 import numpy as np
-import matplotlib.pyplot as plt
-import cv2
-from PIL import Image
-from pyrender.shader_program import ShaderProgramCache
-from scipy.optimize import fmin
-
-from experiments.cal_curvature import cal_curvatrue
 
 
 def normalize_mesh(mesh,fov):
@@ -108,21 +96,9 @@ def camera_matrix(camera_position, target_position, up_direction):
 
 
 
-def gen_contours_and_curvature(scaledMesh,yfov):
-    rotate_angle = np.random.rand(3)*360
-    rotatedMesh = rotate_trimesh(scaledMesh,[0,1,0],rotate_angle[0])
-    rotatedMesh = rotate_trimesh(rotatedMesh,[1,0,0],rotate_angle[1])
-    rotatedMesh = rotate_trimesh(rotatedMesh,[0,0,1],rotate_angle[2])
-    curvature_1,curvature_2,contours=cal_curvatrue(rotatedMesh,yfov)
-    return curvature_1,curvature_2,contours,rotate_angle
 
-    # occluding_contours, color_with_contours = find_occluding_contours(color, depth)
 
-    return normals,depth,rotate_angle
-if __name__ == "__main__":
-    r = pyrender.OffscreenRenderer(viewport_width=1024, viewport_height=1024)
-    plyPath = './testData/cow.obj'
-    r._renderer._program_cache = ShaderProgramCache(shader_dir="shaders")
+
 
 
 

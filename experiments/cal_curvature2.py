@@ -1,21 +1,9 @@
-import math
-import matplotlib.colors as mcolors
-import matplotlib.pyplot as plt
 import numpy
-import numpy as np
 import shapely
-import trimesh
-import matplotlib.pyplot as plt
 from shapely.geometry import polygon
 from trimesh.intersections import mesh_plane
-from sklearn.decomposition import PCA
 import numpy as np
 from shapely import Polygon, union_all
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
-from mpl_toolkits.mplot3d.art3d import Poly3DCollection
-import matplotlib.colors as colors
-from skspatial.objects import Vector
 import networkx as nx
 
 def normalize(v):
