@@ -4,7 +4,6 @@ import os
 import random
 import multiprocessing
 from tqdm import tqdm
-from data.param_parser import parameter_parser
 from experiments.cal_give_obj2 import cal2
 
 config = configparser.ConfigParser()
